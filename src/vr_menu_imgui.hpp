@@ -41,7 +41,7 @@ inline std::array<VrMenuRow,settings_row_count> vr_menu_rows(const VrSettings& s
     else if(t.mode==TurnControl::Mode::smooth) std::snprintf(turn,sizeof turn,"Smooth %g deg/s",t.smooth_degrees_per_second);
     else std::snprintf(turn,sizeof turn,"Native game");
     std::string renderer_help="Native stereo renders both eyes every frame. Alternate eye renders one eye per frame and re-projects the other (built-in warp). "
-        "AFW (alternate frame warping) rebuilds the other eye from the fresh one (needs PDAFWPlugin.dll next to the game and an FSR or DLSS anti-aliasing mode). "
+        "AFW (alternate frame warping) rebuilds the other eye from the fresh one and its own last image (needs an FSR or DLSS anti-aliasing mode). "
         "Choose with the stick, then press A to apply: it switches at once, no restart.";
     if(s.renderer_pending() && !s.renderer_available(s.renderer())) renderer_help+=" Unavailable this session: alternate eye did not start (see the log).";
     if(!s.afw_status().empty() && s.renderer()==2) renderer_help+=" Status: "+s.afw_status()+".";

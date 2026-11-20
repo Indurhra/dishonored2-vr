@@ -137,7 +137,7 @@ public:
     // Empty stem = nothing. The writes wait for the GPU.
     struct MotionProbe {std::wstring stem;std::string json;Microsoft::WRL::ComPtr<ID3D11Buffer> b1;bool colour{};Microsoft::WRL::ComPtr<ID3D11Resource> scene; // v1169: the TAA dispatch input (HDR scene colour)
     };
-    // AFW renderer (afw_puredark.hpp): a per-eye copy of the motion vectors this eye's dispatch consumed (the engine reuses its own
+    // Optional (unused by the current AFW, afw_vsh.hpp): a per-eye copy of the motion vectors this eye's dispatch consumed (the engine reuses its own
     // target for the next eye), same render rectangle as eye_depth, and the raster jitter (render pixels) it was rendered with.
     std::atomic<bool> afw_keep_motion{false};
     Microsoft::WRL::ComPtr<ID3D11Texture2D> afw_eye_motion(int eye,float& jitter_x,float& jitter_y) {

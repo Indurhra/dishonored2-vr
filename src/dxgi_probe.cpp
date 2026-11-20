@@ -289,6 +289,12 @@ static d2vr::MirrorMode mirror_mode_requested=d2vr::MirrorMode::both_eyes;
 static double sharpness_requested=.5;
 static int taa_preference=2,hud_preference=65,upscale_percent_preference=0; /* upscale_percent_preference: the player's Upscaler scale for taa_preference (0 = preset) */static bool hint_preference=true;
 // v609: the saved AA-chosen marker, whether a settings file existed, and the one-time first-start AA decision (made at Present once the adapter vendor is known)
+// AFW (afw_vsh.hpp): the rebuild's own log lines, to <mod home>artifacts\afw.log (at most 2000 lines a session).
+static std::filesystem::path afw_log_path;
+static void afw_log_line(const char* line) {
+    static std::atomic<unsigned> lines{0};if(afw_log_path.empty() || ++lines>2000) return;
+    try {std::ofstream out(afw_log_path,std::ios::app);out<<GetTickCount64()<<' '<<line<<std::endl;} catch(...) {}
+}
 static int renderer_preference=0,renderer_running=0; // VR menu Renderer row (vr_preferences.hpp v12): saved choice / what this session started
 static bool preferences_file_existed=false,aa_chosen_preference=false,crosshair_preference=true,scripted_recenter_preference=true,first_start_pending=false,crosshair_migrated=false;
 static fs::path crosshair_legacy_file; // set while build/no-hand-crosshair awaits its first successful save
@@ -6412,6 +6418,7 @@ static std::string run_test_command(const std::string& line) {
         if(v=="on") rt.requested=renderer_running!=0;else if(v=="off") rt.requested=false;
         else if(v=="capture") {int n=6;in>>n;if(game_xr) game_xr->afw_capture_requested=std::clamp(n,1,32);}
         else if(v=="tune") {std::string k;double x{};in>>k>>x;
+            if(k=="mask") t.mask=x!=0;else if(k=="stale") t.stale=static_cast<float>(std::clamp(x,.002,.2));else if(k=="fg") t.fg_depth=static_cast<float>(std::clamp(x,.1,3.));else if(k=="body") t.body_depth=static_cast<float>(std::clamp(x,.1,3.));else if(k=="nearmiss") t.near_miss=static_cast<float>(std::clamp(x,0.,32.));else if(k=="debug") t.debug=x!=0;else if(k=="ownhands") t.own_hands=static_cast<float>(std::clamp(x,0.,1.));else if(k=="edgehands") t.edge_hands=x!=0;else if(k=="heldhands") t.held_hands=x!=0;else if(k=="stillshade") t.still_shade=x!=0;else if(k=="stillmm") t.still_mm=static_cast<float>(std::clamp(x,0.,50.));else if(k=="stilldeg") t.still_deg=static_cast<float>(std::clamp(x,0.,30.));else if(k=="rigdepth") {t.rig_depth=static_cast<float>(std::clamp(x,.1,50.));t.rig_depth_manual=true;}else if(k=="near") t.near_range=static_cast<float>(std::clamp(x,0.,1.));else if(k=="helddepth") t.held_depth=static_cast<float>(std::clamp(x,.1,50.));else
             if(k=="threshold") t.ignore_motion_threshold=static_cast<float>(std::clamp(x,0.,64.));else if(k=="jitter") t.jitter_scale=static_cast<float>(std::clamp(x,-2.,2.));
             else if(k=="gap") t.max_frame_gap=static_cast<int>(std::clamp(x,1.,8.));else if(k=="mv") t.motion_scale=static_cast<float>(std::clamp(x,-4.,4.));else if(k=="halo") t.halo=static_cast<int>(std::clamp(x,0.,4.));else if(k=="reset") t.reset_on_gap=x!=0;else return "afw tune: threshold|jitter|gap|reset|mv <value>";}
         std::ostringstream o;o<<"afw requested "<<rt.requested.load()<<" running "<<renderer_running<<" rebuilt "<<rt.rebuilt.load()<<" refused "<<rt.refused.load()
@@ -11884,7 +11891,7 @@ std::string feedback_status_json() {    std::ostringstream out;
                << ",\"paired\":" << alt_paired.load() << ",\"scope_held\":" << alt_scope_held.load() << ",\"fallbacks\":" << alt_fallbacks.load()
                << ",\"parity_flip\":" << (d2vr::alternate_parity_flip.load()?"true":"false") << ",\"band_bursts\":" << alt_band_bursts
                << ",\"stale_warp\":" << (stale_eye_warp_knob?"true":"false") << ",\"stale_warps\":" << (game_xr?game_xr->stale_eye_warps:0) << [&]{auto& rt=d2vr::afw::runtime();auto& t=d2vr::afw::tuning();std::string pr=rt.problem();for(auto& ch:pr) if(ch=='"'||ch==92||static_cast<unsigned char>(ch)<32) ch='?';
-                   std::ostringstream o;o<<",\"renderer_live\":"<<(game_xr?game_xr->renderer_live():-1)<<",\"afw\":{\"requested\":"<<(rt.requested.load()?"true":"false")<<",\"rebuilt\":"<<rt.rebuilt.load()<<",\"submitted\":"<<(game_xr?game_xr->afw_rebuilds:0)
+                   std::ostringstream o;o<<",\"renderer_live\":"<<(game_xr?game_xr->renderer_live():-1)<<",\"afw\":{\"requested\":"<<(rt.requested.load()?"true":"false")<<",\"rebuilt\":"<<rt.rebuilt.load()<<",\"masked\":"<<rt.masked.load()<<",\"captured\":"<<rt.captured.load()<<",\"submitted\":"<<(game_xr?game_xr->afw_rebuilds:0)
                     <<",\"refused\":"<<rt.refused.load()<<",\"fallbacks\":"<<rt.fallbacks.load()<<",\"busy\":"<<rt.busy()<<",\"mv\":"<<t.motion_scale.load()<<",\"jitter\":"<<t.jitter_scale.load()
                     <<",\"halo\":"<<t.halo.load()<<",\"threshold\":"<<t.ignore_motion_threshold.load()<<",\"problem\":\""<<pr<<"\"}";return o.str();}() << ",\"uncanted_eyes\":" << (game_xr?game_xr->uncanted_eyes:0) << ",\"hand_fit\":[" << (game_xr?game_xr->hand_fits():0) << ',' << (game_xr?game_xr->hand_fit_corrections():0) << ']'
                << ",\"stale_warp_failures\":" << (game_xr?game_xr->stale_eye_warp_failures:0)
@@ -13499,7 +13506,8 @@ HRESULT WINAPI present_hook(IDXGISwapChain* chain,UINT interval,UINT flags) {
                             }
                             alt_motion_times.note(number,alt_fresh);
                             game_xr->stale_fresh_part=alt_motion_times.fresh_part(number);game_xr->stale_kept_part=alt_motion_times.kept_part(number);
-                            fsr_taa.afw_keep_motion=d2vr::afw::runtime().requested.load(); // AFW renderer: the fresh eye's motion vectors
+                            fsr_taa.afw_keep_motion=false; // AFW (afw_vsh.hpp) works from depth and camera poses: no motion-vector copy
+                            if(auto& at=d2vr::afw::tuning();!at.rig_depth_manual.load()) at.rig_depth=d2vr::NativePlayerDepth::process_owner().world_depth_current(read_self_ref)?1.f:5.f;
                             if(fsr_taa.afw_keep_motion.load()) {float jx{},jy{};if(const auto motion=fsr_taa.afw_eye_motion(alt_fresh,jx,jy)) game_xr->afw_eye_motion(static_cast<UINT>(alt_fresh),motion.Get(),jx,jy,number);}
                         }
                         // G2 VR cutscenes (cutscene_policy.hpp): classify this Present. Immersive = exact 32 with a complete native pair of two distinct
@@ -14136,15 +14144,12 @@ HRESULT WINAPI present_hook(IDXGISwapChain* chain,UINT interval,UINT flags) {
                                 }
                                 const bool play=gameplay && game_xr->state==XR_SESSION_STATE_FOCUSED && game_xr->controller_input.active && !game_xr->settings_open();
                                 wchar_t exe[MAX_PATH]{};static const auto game_dir=(GetModuleFileNameW(nullptr,exe,MAX_PATH),std::filesystem::path(exe).parent_path());
-                                static bool psvr2_log_set=false;if(!psvr2_log_set) {psvr2_log_set=true;d2vr::psvr2::runtime().log_to(output_directory.always()/L"psvr2.log");}
+                                static bool psvr2_log_set=false;if(!psvr2_log_set) {psvr2_log_set=true;d2vr::psvr2::runtime().log_to(output_directory.always()/L"psvr2.log");
+                                    afw_log_path=output_directory.always()/L"afw.log";d2vr::afw::runtime().log_to(&afw_log_line);}
                                 d2vr::psvr2::runtime().update(game_xr->xr_runtime_name,game_xr->xr_system_name,play,items,
                                     {game_xr->controller_input.left_trigger,game_xr->controller_input.right_trigger},game_dir);
                             }
                             if(game_xr->afw_capture_dir.empty()) game_xr->afw_capture_dir=output_directory.always().wstring();
-                            if(game_xr->afw_plugin_path.empty()) { // AFW renderer: PDAFWPlugin.dll is the user's own copy, next to Dishonored2.exe
-                                wchar_t exe[MAX_PATH]{};GetModuleFileNameW(nullptr,exe,MAX_PATH);
-                                game_xr->afw_plugin_path=(std::filesystem::path(exe).parent_path()/L"PDAFWPlugin.dll").wstring();
-                            }
                             game_xr->effective_temporal_aa(temporal_live_mode.load());
                             game_xr->scene_hold=cutscene_hold;game_xr->scene_id=cutscene_count.load(); // G2: this cutscene's hold and its identity
                             if(dual_wield_enabled && game_logic_mask()==256) { // v776: the hand wheel's ring goes behind the hands drawn in this displayed frame
@@ -17162,6 +17167,9 @@ extern "C" __declspec(dllexport) DWORD WINAPI StartProbe(void*) {
                     if(k=="mv") t.motion_scale=static_cast<float>(std::clamp(x,-4.,4.));else if(k=="jitter") t.jitter_scale=static_cast<float>(std::clamp(x,-2.,2.));
                     else if(k=="threshold") t.ignore_motion_threshold=static_cast<float>(std::clamp(x,0.,64.));else if(k=="gap") t.max_frame_gap=static_cast<int>(std::clamp(x,1.,8.));
                     else if(k=="reset") t.reset_on_gap=x!=0;else if(k=="halo") t.halo=static_cast<int>(std::clamp(x,0.,4.));
+                    else if(k=="debug") t.debug=x!=0;else if(k=="mask") t.mask=x!=0;else if(k=="stale") t.stale=static_cast<float>(std::clamp(x,.002,.2));else if(k=="fg") t.fg_depth=static_cast<float>(std::clamp(x,.1,3.));
+                    else if(k=="body") t.body_depth=static_cast<float>(std::clamp(x,.1,3.));else if(k=="nearmiss") t.near_miss=static_cast<float>(std::clamp(x,0.,32.));
+                    if(k=="ownhands") t.own_hands=static_cast<float>(std::clamp(x,0.,1.));else if(k=="edgehands") t.edge_hands=x!=0;else if(k=="heldhands") t.held_hands=x!=0;else if(k=="stillshade") t.still_shade=x!=0;else if(k=="stillmm") t.still_mm=static_cast<float>(std::clamp(x,0.,50.));else if(k=="stilldeg") t.still_deg=static_cast<float>(std::clamp(x,0.,30.));else if(k=="rigdepth") {t.rig_depth=static_cast<float>(std::clamp(x,.1,50.));t.rig_depth_manual=true;}else if(k=="near") t.near_range=static_cast<float>(std::clamp(x,0.,1.));else if(k=="helddepth") t.held_depth=static_cast<float>(std::clamp(x,.1,50.));
                 }
             }
             d2vr::psvr2::runtime().enabled=!fs::exists(root/L"build"/L"no-psvr2-triggers"); // PSVR2 left adaptive trigger (SteamVR + PS VR2 only) // knob: AFW renderer (development runs without saved settings)

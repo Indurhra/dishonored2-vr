@@ -73,7 +73,7 @@ class VrSettings {
     int renderer_{};          // the Renderer row's selection: 0 native stereo, 1 alternate eye (built-in warp), 2 AFW (vr_preferences.hpp v12)
     int renderer_applied_{};  // what renders now (and is saved); the selection takes effect only on Apply (A on the row)
     bool renderer_capable_{}; // this session started alternate-capable, so every renderer switches live
-    std::string afw_status_;  // afw_puredark.hpp Runtime::problem(), shown under the Renderer row
+    std::string afw_status_;  // afw_vsh.hpp Runtime::problem(), shown under the Renderer row
     std::optional<int> effective_temporal_aa_;
     bool dlss_available_{}; // NVIDIA GPU and a usable nvngx_dlss.dll: the DLAA/DLSS Quality rows are offered only then
     int hud_percent_{65};
